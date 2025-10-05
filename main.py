@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,13 +5,14 @@ from typing import List
 import json
 import numpy as np
 
+# Request model
 class TelemetryRequest(BaseModel):
     regions: List[str]
     threshold_ms: int
 
 app = FastAPI()
 
-# Enable CORS for all origins
+# Enable CORS for all POST requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,18 +20,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load telemetry data once at startup
+# Load telemetry data at startup
 with open("q-vercel-latency.json") as f:
     telemetry_data = json.load(f)
 
 @app.post("/api/metrics")
 async def get_metrics(request: TelemetryRequest):
     response = {}
+
     for region in request.regions:
-        # Filter data for this region
-        records = [r for r in telemetry_data if r["region"] == region]
-        if not records:
-            # If no data for region, return zeros
+        region_data = [r for r in telemetry_data if r["region"] == region]
+
+        if not region_data:
             response[region] = {
                 "avg_latency": 0,
                 "p95_latency": 0,
@@ -40,15 +40,15 @@ async def get_metrics(request: TelemetryRequest):
             }
             continue
 
-        latencies = [r["latency_ms"] for r in records]
-        uptimes = [r["uptime"] for r in records]
+        latencies = [r["latency_ms"] for r in region_data]
+        uptimes = [r["uptime_pct"] for r in region_data]
         breaches = sum(1 for l in latencies if l > request.threshold_ms)
 
         response[region] = {
-            "avg_latency": float(np.mean(latencies)),
-            "p95_latency": float(np.percentile(latencies, 95)),
-            "avg_uptime": float(np.mean(uptimes)),
-            "breaches": int(breaches)
+            "avg_latency": round(float(np.mean(latencies)), 3),
+            "p95_latency": round(float(np.percentile(latencies, 95)), 3),
+            "avg_uptime": round(float(np.mean(uptimes)), 3),
+            "breaches": breaches
         }
 
     return response
